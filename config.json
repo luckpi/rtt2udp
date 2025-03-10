@@ -1,0 +1,13 @@
+{
+    "target_device": "Cortex-M0+",
+    "rtt_buffer_index": 0,
+    "polling_interval": 0.01,
+    "rtt_ctrl_block_addr": 0,
+    "rtt_search_start": 536870912,
+    "rtt_search_length": 4096,
+    "rtt_search_step": 4,
+    "udp_ip": "127.0.0.1",
+    "udp_port": 8888,
+    "debug": false,
+    "auto_save": true
+}
