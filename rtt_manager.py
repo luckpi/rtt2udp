@@ -77,10 +77,9 @@ class RTTManager:
             else:
                 try:
                     speed_khz = int(speed)
-                    self.jlink.set_speed(speed_khz)
                     self.logger.info(f"设置调试速度为 {speed_khz} kHz")
                     # 连接到目标设备
-                    self.jlink.connect(self.config.target_device)
+                    self.jlink.connect(self.config.target_device, speed_khz)
                 except ValueError:
                     self.logger.warning(f"无效的调试速度值: {speed}，使用auto模式")
                     self.jlink.connect(self.config.target_device, "auto")
@@ -140,18 +139,6 @@ class RTTManager:
         if not self.is_connected():
             return False
         return self.jlink.target_connected()
-
-    def get_supported_devices(self):
-        """获取支持的设备列表"""
-        try:
-            if not self.jlink:
-                self.jlink = pylink.JLink()
-            num_devices = self.jlink.num_supported_devices()
-            devices = [self.jlink.supported_device(i) for i in range(num_devices)]
-            return devices
-        except Exception as e:
-            self.logger.error(f"获取设备列表失败: {str(e)}")
-            return []
 
     def _setup_rtt(self):
         """设置RTT"""
