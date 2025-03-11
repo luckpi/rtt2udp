@@ -7,11 +7,23 @@ RTT2UDP配置文件
 
 import json
 import os
+import sys
+import logging
+from pathlib import Path
 
 class Config:
     def __init__(self):
+        # 设置应用程序名称
+        self.app_name = "RTT2UDP"
+        
         # 配置文件路径
-        self.config_file = os.path.join(os.path.dirname(__file__), "config.json")
+        self.config_file = self._get_config_path()
+        
+        # 确保配置目录存在
+        os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        
+        # 创建日志记录器
+        self.logger = logging.getLogger(__name__)
         
         # JLink配置
         self.target_device = ""  # 目标设备类型，根据实际情况修改
@@ -39,6 +51,28 @@ class Config:
         # 尝试加载配置文件
         self.load()
     
+    def _get_config_path(self):
+        """获取配置文件路径
+        
+        根据操作系统返回适当的配置文件路径:
+        - Windows: %APPDATA%\RTT2UDP\config.json
+        - macOS: ~/Library/Application Support/RTT2UDP/config.json
+        - Linux: ~/.config/RTT2UDP/config.json
+        """
+        home = Path.home()
+        
+        if sys.platform == "win32":
+            # Windows
+            config_dir = os.path.join(os.environ.get("APPDATA", str(home / "AppData" / "Roaming")), self.app_name)
+        elif sys.platform == "darwin":
+            # macOS
+            config_dir = str(home / "Library" / "Application Support" / self.app_name)
+        else:
+            # Linux/Unix
+            config_dir = str(home / ".config" / self.app_name)
+        
+        return os.path.join(config_dir, "config.json")
+    
     @property
     def rtt_search_range(self):
         """获取搜索范围"""
@@ -51,6 +85,9 @@ class Config:
     def save_config(self):
         """保存配置到文件"""
         try:
+            # 确保配置目录存在
+            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+            
             config_data = {
                 "target_device": self.target_device,
                 "debug_interface": self.debug_interface,
@@ -69,8 +106,10 @@ class Config:
             
             with open(self.config_file, 'w', encoding="utf-8") as f:
                 json.dump(config_data, f, indent=4, ensure_ascii=False)
+                
+            self.logger.info(f"配置已保存到: {self.config_file}")
         except Exception as e:
-            print(f"保存配置失败: {str(e)}")
+            self.logger.error(f"保存配置失败: {str(e)}")
     
     def load(self):
         """从文件加载配置"""
@@ -92,5 +131,9 @@ class Config:
                     self.polling_interval = config_data.get("polling_interval", self.polling_interval)
                     self.debug = config_data.get("debug", self.debug)
                     self.auto_save = config_data.get("auto_save", self.auto_save)
+                
+                self.logger.info(f"已从 {self.config_file} 加载配置")
+            else:
+                self.logger.info(f"配置文件不存在，将使用默认配置")
         except Exception as e:
-            print(f"加载配置失败: {str(e)}")
+            self.logger.error(f"加载配置失败: {str(e)}")
