@@ -32,11 +32,18 @@ def extract_rtt_address_from_map(map_file_path):
     try:
         with open(map_file_path, 'r', encoding='utf-8', errors='ignore') as f:
             map_content = f.read()
-            
-        # 匹配 _SEGGER_RTT 符号及其地址
-        # 示例: _SEGGER_RTT      0x20000668   Data         168  segger_rtt.o(.bss._SEGGER_RTT)
-        pattern = r'_SEGGER_RTT\s+0x([0-9a-fA-F]+)\s+\w+\s+\d+'
-        match = re.search(pattern, map_content)
+        
+        # 尝试匹配第一种格式: _SEGGER_RTT      0x20000668   Data         168  segger_rtt.o(.bss._SEGGER_RTT)
+        pattern1 = r'_SEGGER_RTT\s+0x([0-9a-fA-F]+)\s+\w+\s+\d+'
+        match = re.search(pattern1, map_content)
+        
+        if match:
+            addr_hex = match.group(1)
+            return int(addr_hex, 16)
+        
+        # 尝试匹配第二种格式: .bss._SEGGER_RTT       0x2000084c       0x14 ./Code/foc/FOC.o
+        pattern2 = r'\.bss\._SEGGER_RTT\s+0x([0-9a-fA-F]+)\s+0x[0-9a-fA-F]+\s+'
+        match = re.search(pattern2, map_content)
         
         if match:
             addr_hex = match.group(1)
