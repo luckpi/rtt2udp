@@ -37,6 +37,9 @@ class RTT2UDPApplication:
             on_start=self.start_conversion,
             on_stop=self.stop_conversion
         )
+        
+        # 转发服务状态
+        self.forwarding_active = False
     
     def start_conversion(self):
         """启动转发服务"""
@@ -46,8 +49,8 @@ class RTT2UDPApplication:
             self.logger.error("未选择有效的JLink设备")
             return False
         
-        # 连接RTT
-        if not self.rtt_manager.connect(serial):
+        # 连接RTT，传入连接丢失回调
+        if not self.rtt_manager.connect(serial, on_connection_lost=self.on_connection_lost):
             return False
         
         # 设置UDP
@@ -61,14 +64,38 @@ class RTT2UDPApplication:
             self.rtt_manager.disconnect()
             return False
         
+        # 更新转发状态
+        self.forwarding_active = True
+        
         return True
     
     def stop_conversion(self):
         """停止转发服务"""
+        self.forwarding_active = False
         self.forwarder.stop()
         self.udp_manager.close()
         self.rtt_manager.disconnect()
         return True
+    
+    def on_connection_lost(self):
+        """连接丢失回调函数"""
+        self.logger.warning("检测到JLink连接丢失，自动停止转发服务")
+        
+        # 如果转发服务正在运行，则停止
+        if self.forwarding_active:
+            # 使用tkinter的after方法确保在主线程中执行UI更新
+            self.root.after(0, self._handle_connection_lost)
+    
+    def _handle_connection_lost(self):
+        """在主线程中处理连接丢失"""
+        # 停止转发服务
+        self.stop_conversion()
+        
+        # 更新UI状态
+        self.gui_manager.update_ui_on_stop()
+        
+        # 显示提示信息
+        self.gui_manager.show_info("JLink连接已断开，转发服务已自动停止")
     
     def on_closing(self):
         """窗口关闭处理"""

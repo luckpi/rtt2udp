@@ -11,6 +11,7 @@ import time
 import logging
 import pylink
 import re
+import threading
 
 
 def extract_serial_numbers(text):
@@ -66,6 +67,12 @@ class RTTManager:
         self.last_buffer_check_time = 0
         self.buffer_check_interval = 0.001  # 缓冲区状态检查间隔，单位秒
         
+        # 连接状态监控
+        self.connection_monitor_thread = None
+        self.monitoring = False
+        self.connection_check_interval = 1.0  # 连接状态检查间隔，单位秒
+        self.on_connection_lost = None  # 连接丢失回调函数
+        
     def get_jlink_list(self):
         """获取已连接的JLink设备列表"""
         try:
@@ -81,11 +88,19 @@ class RTTManager:
             self.logger.error(f"获取JLink列表失败: {str(e)}")
             return []
 
-    def connect(self, serial_number):
-        """连接到JLink设备"""
+    def connect(self, serial_number, on_connection_lost=None):
+        """连接到JLink设备
+        
+        Args:
+            serial_number: JLink设备序列号
+            on_connection_lost: 连接丢失时的回调函数
+        """
         try:
             if self.jlink:
                 self.jlink.close()
+            
+            # 保存连接丢失回调
+            self.on_connection_lost = on_connection_lost
             
             # 连接JLink
             self.jlink = pylink.JLink()
@@ -128,6 +143,10 @@ class RTTManager:
             # 启动RTT
             self._setup_rtt()
             
+            # 启动连接状态监控
+            self.connected = True
+            self._start_connection_monitor()
+            
             return True
         except Exception as e:
             self.logger.error(f"连接目标设备失败: {str(e)}")
@@ -140,6 +159,9 @@ class RTTManager:
             return
         
         try:
+            # 停止连接监控
+            self._stop_connection_monitor()
+            
             # 停止RTT
             if self.rtt_started:
                 self.logger.info("停止RTT...")
@@ -173,7 +195,68 @@ class RTTManager:
         """检查是否已连接目标设备"""
         if not self.is_connected():
             return False
-        return self.jlink.target_connected()
+        try:
+            return self.jlink.target_connected()
+        except Exception as e:
+            self.logger.error(f"检查目标设备连接状态失败: {str(e)}")
+            return False
+
+    def _start_connection_monitor(self):
+        """启动连接状态监控线程"""
+        if self.connection_monitor_thread and self.connection_monitor_thread.is_alive():
+            return
+        
+        self.monitoring = True
+        self.connection_monitor_thread = threading.Thread(target=self._connection_monitor_loop)
+        self.connection_monitor_thread.daemon = True
+        self.connection_monitor_thread.start()
+        self.logger.info("已启动连接状态监控")
+
+    def _stop_connection_monitor(self):
+        """停止连接状态监控线程"""
+        self.monitoring = False
+        if self.connection_monitor_thread and self.connection_monitor_thread.is_alive():
+            self.connection_monitor_thread.join(timeout=2.0)
+            if self.connection_monitor_thread.is_alive():
+                self.logger.warning("连接监控线程未能在超时时间内结束")
+        self.connection_monitor_thread = None
+
+    def _connection_monitor_loop(self):
+        """连接状态监控循环"""
+        last_jlink_status = True
+        
+        while self.monitoring and self.connected:
+            try:
+                # 检查JLink连接状态
+                current_jlink_status = self.is_connected()
+                
+                # 如果JLink连接丢失
+                if last_jlink_status and not current_jlink_status:
+                    self.logger.warning("检测到JLink连接丢失")
+                    self.logger.error("JLink连接已断开")
+                    
+                    # 调用连接丢失回调
+                    if self.on_connection_lost:
+                        self.logger.info("触发连接丢失回调")
+                        self.on_connection_lost()
+                    
+                    # 停止监控
+                    self.monitoring = False
+                    break
+                
+                # 更新状态
+                last_jlink_status = current_jlink_status
+                
+            except Exception as e:
+                self.logger.error(f"连接监控过程中发生错误: {str(e)}")
+                # 发生异常也视为连接丢失
+                if self.on_connection_lost:
+                    self.on_connection_lost()
+                self.monitoring = False
+                break
+            
+            # 等待下一次检查
+            time.sleep(self.connection_check_interval)
 
     def _setup_rtt(self):
         """设置RTT"""

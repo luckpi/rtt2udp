@@ -563,6 +563,16 @@ class GUIManager:
         """显示错误对话框"""
         messagebox.showerror("错误", message)
     
+    def show_info(self, message):
+        """显示信息对话框"""
+        messagebox.showinfo("信息", message)
+    
+    def update_ui_on_stop(self):
+        """更新UI为停止状态"""
+        self.start_button.config(state=tk.NORMAL)
+        self.stop_button.config(state=tk.DISABLED)
+        self.status_var.set("已停止")
+    
     def on_closing(self):
         """窗口关闭回调"""
         # 保存配置
