@@ -50,8 +50,6 @@ pip install pylink-square>=0.14.2
 
 ## 使用方法
 
-### 图形界面模式
-
 1. 连接JLink设备到计算机
 2. 运行程序：
 
@@ -62,30 +60,15 @@ python main.py
 3. 在GUI界面中选择JLink设备、配置参数并启动转发
 4. 点击"停止"按钮停止转发
 
-### 命令行模式
-
-1. 连接JLink设备到计算机
-2. 根据实际情况修改 `config.json`中的配置
-3. 运行程序：
-
-```bash
-python rtt2udp.py
-```
-
-4. 程序将开始将RTT数据转发到指定的UDP端口
-5. 按 `Ctrl+C`停止程序
-
 ## 项目结构
 
 - `main.py`: 主程序入口(GUI模式)
-- `rtt2udp.py`: 命令行模式入口
 - `config.py`: 配置管理
 - `rtt_manager.py`: RTT通信管理
 - `udp_manager.py`: UDP通信管理
 - `forwarder.py`: 数据转发逻辑
 - `gui_manager.py`: GUI界面管理
 - `device_selector.py`: JLink设备选择器
-- `rtt2udp_gui.py`: 旧版GUI实现
 
 ## 接收UDP数据
 
@@ -100,13 +83,13 @@ sock.bind(('0.0.0.0', 8888))  # 绑定到与config.json中相同的端口
 
 print("等待接收RTT数据...")
 while True:
-    data, addr = sock.recvfrom(1024)
+    data, addr = sock.recvfrom(65535)
     print(f"收到数据: {data.decode('utf-8', errors='replace')}")
 ```
 
 ## 故障排除
 
-- **如果使用过程中，进行调试，工具则会异常，需要点击停止后重新启用，即可正常使用**
+- **如果使用过程中，MCU进行调试，工具则会异常，需要点击停止后重新启用，即可正常使用**
 - 确保JLink设备已正确连接
 - 验证目标设备类型是否正确
 - 检查RTT是否已在目标设备上启用
