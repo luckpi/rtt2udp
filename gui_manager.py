@@ -7,10 +7,12 @@ GUI管理器模块
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import logging
 import queue
+import os
 from device_selector import DeviceSelector
+from rtt_manager import extract_rtt_address_from_map
 
 class QueueHandler(logging.Handler):
     """日志队列处理器"""
@@ -82,19 +84,13 @@ class GUIManager:
         
         # RTT配置
         self.buffer_index_var = tk.IntVar(value=self.config.rtt_buffer_index)
-        self.rtt_mode_var = tk.StringVar(
-            value="auto" if self.config.rtt_ctrl_block_addr == 0 else "manual"
-        )
+        self.rtt_mode_var = tk.StringVar(value=self.config.rtt_mode)
         self.rtt_addr_var = tk.StringVar(
             value=f"0x{self.config.rtt_ctrl_block_addr:X}" if self.config.rtt_ctrl_block_addr else ""
         )
-        self.rtt_search_start_var = tk.StringVar(
-            value=f"0x{self.config.rtt_search_start:X}"
-        )
-        self.rtt_search_length_var = tk.StringVar(
-            value=f"0x{self.config.rtt_search_length:X}"
-        )
-        self.rtt_search_step_var = tk.IntVar(value=self.config.rtt_search_step)
+        
+        # Map文件配置
+        self.map_file_path_var = tk.StringVar(value=self.config.map_file_path)
         
         # UDP配置
         self.udp_ip_var = tk.StringVar(value=self.config.udp_ip)
@@ -235,16 +231,16 @@ class GUIManager:
         ttk.Label(basic_frame, text="控制块模式:").pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(
             basic_frame,
-            text="自动",
+            text="手动",
             variable=self.rtt_mode_var,
-            value="auto",
+            value="manual",
             command=self._on_rtt_mode_change
         ).pack(side=tk.LEFT, padx=2)
         ttk.Radiobutton(
             basic_frame,
-            text="手动",
+            text="Map文件",
             variable=self.rtt_mode_var,
-            value="manual",
+            value="map",
             command=self._on_rtt_mode_change
         ).pack(side=tk.LEFT, padx=2)
         
@@ -259,29 +255,32 @@ class GUIManager:
         ).pack(side=tk.LEFT, padx=5)
         self.rtt_addr_var.trace_add("write", self._on_config_change)
         
-        # 搜索模式配置
-        self.search_frame = ttk.Frame(rtt_frame)
-        self.search_frame.pack(fill=tk.X, pady=2)
+        # 添加从Map文件加载按钮
+        ttk.Button(
+            self.manual_frame,
+            text="从Map文件加载",
+            command=self._load_from_map_file
+        ).pack(side=tk.LEFT, padx=5)
         
-        # 搜索起始地址
-        start_frame = ttk.Frame(self.search_frame)
-        start_frame.pack(side=tk.LEFT, padx=5)
-        ttk.Label(start_frame, text="起始地址:").pack(side=tk.LEFT)
-        ttk.Entry(
-            start_frame,
-            textvariable=self.rtt_search_start_var,
-            width=10
-        ).pack(side=tk.LEFT, padx=2)
+        # Map文件模式配置
+        self.map_frame = ttk.Frame(rtt_frame)
+        self.map_frame.pack(fill=tk.X, pady=2)
         
-        # 搜索长度
-        length_frame = ttk.Frame(self.search_frame)
-        length_frame.pack(side=tk.LEFT, padx=5)
-        ttk.Label(length_frame, text="搜索长度:").pack(side=tk.LEFT)
-        ttk.Entry(
-            length_frame,
-            textvariable=self.rtt_search_length_var,
-            width=10
-        ).pack(side=tk.LEFT, padx=2)
+        # Map文件路径
+        map_path_frame = ttk.Frame(self.map_frame)
+        map_path_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(map_path_frame, text="Map文件:").pack(side=tk.LEFT, padx=5)
+        self.map_file_entry = ttk.Entry(
+            map_path_frame,
+            textvariable=self.map_file_path_var,
+            width=40
+        )
+        self.map_file_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Button(
+            map_path_frame,
+            text="浏览...",
+            command=self._browse_map_file
+        ).pack(side=tk.LEFT, padx=5)
         
         # 根据当前模式显示/隐藏相应的框架
         self._on_rtt_mode_change()
@@ -463,84 +462,92 @@ class GUIManager:
     def _on_rtt_mode_change(self):
         """RTT模式更改回调"""
         mode = self.rtt_mode_var.get()
+        
+        # 隐藏所有模式的框架
+        self.manual_frame.pack_forget()
+        if hasattr(self, 'map_frame'):
+            self.map_frame.pack_forget()
+        
+        # 根据选择的模式显示相应的框架
         if mode == "manual":
             self.manual_frame.pack(fill=tk.X, pady=2)
-            self.search_frame.pack_forget()
-        else:
-            self.manual_frame.pack_forget()
-            self.search_frame.pack(fill=tk.X, pady=2)
+        elif mode == "map":
+            self.map_frame.pack(fill=tk.X, pady=2)
         
-        self._on_config_change()
-    
+        # 更新配置
+        self.config.rtt_mode = mode
+        self._update_config()
+
     def _update_config(self):
         """从UI更新配置"""
-        try:
-            self.config.target_device = self.target_device_var.get()
-            self.config.debug_interface = self.debug_interface_var.get()
-            self.config.debug_speed = self.debug_speed_var.get()
-            self.config.rtt_buffer_index = self.buffer_index_var.get()
-            
-            # 更新RTT控制块配置
-            if self.rtt_mode_var.get() == "manual":
-                try:
-                    addr = self.rtt_addr_var.get()
-                    if addr.startswith("0x"):
-                        self.config.rtt_ctrl_block_addr = int(addr, 16)
-                    else:
-                        self.config.rtt_ctrl_block_addr = int(addr)
-                except:
-                    self.config.rtt_ctrl_block_addr = 0
-            else:
+        # 更新JLink配置
+        self.config.target_device = self.target_device_var.get()
+        self.config.debug_interface = self.debug_interface_var.get()
+        self.config.debug_speed = self.debug_speed_var.get()
+        
+        # 更新RTT配置
+        self.config.rtt_buffer_index = self.buffer_index_var.get()
+        self.config.rtt_mode = self.rtt_mode_var.get()
+        
+        # 根据模式更新RTT控制块配置
+        mode = self.rtt_mode_var.get()
+        if mode == "manual":
+            # 更新控制块地址
+            try:
+                addr_str = self.rtt_addr_var.get()
+                if addr_str.startswith("0x"):
+                    self.config.rtt_ctrl_block_addr = int(addr_str, 16)
+                else:
+                    self.config.rtt_ctrl_block_addr = int(addr_str)
+            except ValueError:
+                self.logger.error("控制块地址格式错误")
                 self.config.rtt_ctrl_block_addr = 0
-            
-            # 更新RTT搜索配置
-            try:
-                start = self.rtt_search_start_var.get()
-                if start.startswith("0x"):
-                    self.config.rtt_search_start = int(start, 16)
-                else:
-                    self.config.rtt_search_start = int(start)
-            except:
-                pass
-            
-            try:
-                length = self.rtt_search_length_var.get()
-                if length.startswith("0x"):
-                    self.config.rtt_search_length = int(length, 16)
-                else:
-                    self.config.rtt_search_length = int(length)
-            except:
-                pass
-            
-            self.config.rtt_search_step = self.rtt_search_step_var.get()
-            
-            # 更新UDP配置
-            self.config.udp_ip = self.udp_ip_var.get()
-            self.config.udp_port = self.udp_port_var.get()
-            self.config.local_port = self.local_port_var.get()
-            
-            # 更新其他配置
-            self.config.polling_interval = self.polling_interval_var.get()
-            self.config.debug = self.debug_var.get()
-            self.config.auto_save = self.auto_save_var.get()
-            
-            # 保存配置
-            if hasattr(self.config, 'save') and self.config.auto_save:
-                self.config.save()
-        except Exception as e:
-            self.logger.error(f"更新配置失败: {str(e)}")
-    
+        
+        elif mode == "map":
+            # 更新Map文件配置
+            self.config.map_file_path = self.map_file_path_var.get()
+            # 如果选择了map模式但没有设置地址，将地址设为0以便后续自动加载
+            if self.config.rtt_ctrl_block_addr != 0:
+                self.config.rtt_ctrl_block_addr = 0
+        
+        # 更新UDP配置
+        self.config.udp_ip = self.udp_ip_var.get()
+        try:
+            self.config.udp_port = int(self.udp_port_var.get())
+            self.config.local_port = int(self.local_port_var.get())
+        except ValueError:
+            self.logger.error("端口号必须是数字")
+        
+        # 更新其他配置
+        self.config.polling_interval = self.polling_interval_var.get()
+        self.config.debug = self.debug_var.get()
+        self.config.auto_save = self.auto_save_var.get()
+        
+        # 保存配置
+        if self.config.auto_save:
+            self.config.save()
+
     def _on_start_click(self):
         """启动按钮点击回调"""
+        # 更新配置
         self._update_config()
+        
+        # 如果是Map文件模式，确保已加载地址
+        if self.rtt_mode_var.get() == "map" and self.config.rtt_ctrl_block_addr == 0:
+            if not self._load_from_map_file_path():
+                return
+        
+        # 调用启动回调
         if self.on_start():
+            # 更新UI状态
             self.start_button.config(state=tk.DISABLED)
             self.stop_button.config(state=tk.NORMAL)
             self.status_var.set("运行中")
-    
+        
     def _on_stop_click(self):
         """停止按钮点击回调"""
         if self.on_stop():
+            # 更新UI状态
             self.start_button.config(state=tk.NORMAL)
             self.stop_button.config(state=tk.DISABLED)
             self.status_var.set("已停止")
@@ -573,9 +580,86 @@ class GUIManager:
     
     def _select_target_device(self):
         """选择目标设备"""
-        from device_selector import DeviceSelector
         device = DeviceSelector.show_dialog(self.root, self.logger)
         if device:
             self.target_device_var.set(device)
             self.config.target_device = device
+            if self.config.auto_save:
+                self.config.save()
             self.logger.info(f"已选择目标设备: {device}")
+    
+    def _load_from_map_file(self):
+        """从用户选择的Map文件加载RTT控制块地址"""
+        file_path = filedialog.askopenfilename(
+            title="选择Map文件",
+            filetypes=[("Map文件", "*.map"), ("所有文件", "*.*")]
+        )
+        
+        if not file_path:
+            return
+        
+        # 更新Map文件路径
+        self.map_file_path_var.set(file_path)
+        self.config.map_file_path = file_path
+        
+        self.logger.info(f"正在从Map文件加载RTT控制块地址: {file_path}")
+        
+        # 提取RTT控制块地址
+        address = extract_rtt_address_from_map(file_path)
+        
+        if address > 0:
+            # 更新UI和配置
+            self.rtt_addr_var.set(f"0x{address:X}")
+            self.config.rtt_ctrl_block_addr = address
+            
+            if self.config.auto_save:
+                self.config.save()
+                
+            self.logger.info(f"成功从Map文件提取RTT控制块地址: 0x{address:X}")
+        else:
+            messagebox.showerror("错误", "无法从Map文件中提取RTT控制块地址，请检查文件格式是否正确。")
+            self.logger.error("无法从Map文件中提取RTT控制块地址")
+
+    def _browse_map_file(self):
+        """浏览选择Map文件"""
+        file_path = filedialog.askopenfilename(
+            title="选择Map文件",
+            filetypes=[("Map文件", "*.map"), ("所有文件", "*.*")]
+        )
+        
+        if file_path:
+            self.map_file_path_var.set(file_path)
+            self.config.map_file_path = file_path
+            if self.config.auto_save:
+                self.config.save()
+            self.logger.info(f"已选择Map文件: {file_path}")
+    
+    def _load_from_map_file_path(self):
+        """从配置的Map文件路径加载RTT控制块地址"""
+        if not self.config.map_file_path or not os.path.exists(self.config.map_file_path):
+            self.logger.error("Map文件路径无效或文件不存在")
+            return False
+        
+        self.logger.info(f"正在从Map文件加载RTT控制块地址: {self.config.map_file_path}")
+        
+        # 提取RTT控制块地址
+        address = extract_rtt_address_from_map(self.config.map_file_path)
+        
+        if address > 0:
+            # 更新配置
+            self.config.rtt_ctrl_block_addr = address
+            
+            # 如果当前是在Map模式，不需要更改模式
+            if self.rtt_mode_var.get() != "map":
+                self.rtt_addr_var.set(f"0x{address:X}")
+                
+            if self.config.auto_save:
+                self.config.save()
+                
+            self.logger.info(f"成功从Map文件提取RTT控制块地址: 0x{address:X}")
+            return True
+        else:
+            if self.rtt_mode_var.get() == "map":
+                messagebox.showerror("错误", "无法从Map文件中提取RTT控制块地址，请检查文件格式是否正确。")
+            self.logger.error("无法从Map文件中提取RTT控制块地址")
+            return False

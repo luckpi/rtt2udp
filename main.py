@@ -8,6 +8,7 @@ RTT2UDP主程序
 
 import tkinter as tk
 import logging
+import os
 from config import Config
 from rtt_manager import RTTManager
 from udp_manager import UDPManager
@@ -36,7 +37,7 @@ class RTT2UDPApplication:
             on_start=self.start_conversion,
             on_stop=self.stop_conversion
         )
-        
+    
     def start_conversion(self):
         """启动转发服务"""
         # 获取JLink序列号

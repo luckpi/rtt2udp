@@ -19,12 +19,12 @@ class Config:
         self.debug_speed = "auto"  # 调试速度，可选: "auto"、"adaptive" 或具体数值(kHz)
         
         # RTT配置
-        self.rtt_ctrl_block_addr = 0  # RTT控制块地址，0表示自动搜索
+        self.rtt_ctrl_block_addr = 0  # RTT控制块地址
         self.rtt_buffer_index = 0  # RTT缓冲区索引，通常使用0
-        self.rtt_search_start = 0x20000000  # 搜索起始地址
-        self.rtt_search_length = 0x1000  # 搜索长度
-        self.rtt_search_step = 4  # 搜索步长
-        self.polling_interval = 0.001  # 轮询间隔，单位秒
+        self.rtt_mode = "manual"  # RTT控制块模式，可选: "manual" 或 "map"
+        
+        # Map文件配置
+        self.map_file_path = ""  # Map文件路径
         
         # UDP配置
         self.udp_ip = "127.0.0.1"  # UDP目标IP地址
@@ -32,6 +32,7 @@ class Config:
         self.local_port = 0  # 本地端口，0表示自动分配
         
         # 其他配置
+        self.polling_interval = 0.001  # 轮询间隔，单位秒
         self.debug = False  # 是否打印调试信息
         self.auto_save = True  # 是否自动保存配置
         
@@ -41,7 +42,7 @@ class Config:
     @property
     def rtt_search_range(self):
         """获取搜索范围"""
-        return (self.rtt_search_start, self.rtt_search_start + self.rtt_search_length)
+        return (0, 0)
     
     def save(self):
         """保存配置到文件"""
@@ -56,13 +57,12 @@ class Config:
                 "debug_speed": self.debug_speed,
                 "rtt_ctrl_block_addr": self.rtt_ctrl_block_addr,
                 "rtt_buffer_index": self.rtt_buffer_index,
-                "rtt_search_start": self.rtt_search_start,
-                "rtt_search_length": self.rtt_search_length,
-                "rtt_search_step": self.rtt_search_step,
-                "polling_interval": self.polling_interval,
+                "rtt_mode": self.rtt_mode,
+                "map_file_path": self.map_file_path,
                 "udp_ip": self.udp_ip,
                 "udp_port": self.udp_port,
                 "local_port": self.local_port,
+                "polling_interval": self.polling_interval,
                 "debug": self.debug,
                 "auto_save": self.auto_save
             }
@@ -84,13 +84,12 @@ class Config:
                     self.debug_speed = config_data.get("debug_speed", self.debug_speed)
                     self.rtt_ctrl_block_addr = config_data.get("rtt_ctrl_block_addr", self.rtt_ctrl_block_addr)
                     self.rtt_buffer_index = config_data.get("rtt_buffer_index", self.rtt_buffer_index)
-                    self.rtt_search_start = config_data.get("rtt_search_start", self.rtt_search_start)
-                    self.rtt_search_length = config_data.get("rtt_search_length", self.rtt_search_length)
-                    self.rtt_search_step = config_data.get("rtt_search_step", self.rtt_search_step)
-                    self.polling_interval = config_data.get("polling_interval", self.polling_interval)
+                    self.rtt_mode = config_data.get("rtt_mode", self.rtt_mode)
+                    self.map_file_path = config_data.get("map_file_path", self.map_file_path)
                     self.udp_ip = config_data.get("udp_ip", self.udp_ip)
                     self.udp_port = config_data.get("udp_port", self.udp_port)
                     self.local_port = config_data.get("local_port", self.local_port)
+                    self.polling_interval = config_data.get("polling_interval", self.polling_interval)
                     self.debug = config_data.get("debug", self.debug)
                     self.auto_save = config_data.get("auto_save", self.auto_save)
         except Exception as e:

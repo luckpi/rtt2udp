@@ -9,7 +9,7 @@ JLink RTT to UDP转换器 - GUI版本
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import threading
 import logging
 import queue
@@ -18,6 +18,7 @@ import pylink
 import socket
 from config import Config
 from device_selector import DeviceSelector
+from rtt_manager import extract_rtt_address_from_map
 
 # 配置日志
 class QueueHandler(logging.Handler):
@@ -121,6 +122,9 @@ class RTT2UDPApp:
         self.rtt_ctrl_block_addr_var = tk.StringVar(value=hex(self.config.rtt_ctrl_block_addr))
         ttk.Entry(self.direct_frame, textvariable=self.rtt_ctrl_block_addr_var, width=20).pack(side=tk.LEFT, padx=5)
         self.rtt_ctrl_block_addr_var.trace_add("write", self.on_rtt_config_change)
+        
+        # 添加从map文件加载按钮
+        ttk.Button(self.direct_frame, text="从Map文件加载", command=self.load_from_map_file).pack(side=tk.LEFT, padx=5)
         
         # 搜索参数（搜索模式）
         self.search_frame = ttk.Frame(rtt_frame)
@@ -624,6 +628,36 @@ class RTT2UDPApp:
         
         self.logger.info(f"自动保存配置已{'启用' if self.config.auto_save else '禁用'}")
     
+    def load_from_map_file(self):
+        """从map文件加载RTT控制块地址"""
+        file_path = filedialog.askopenfilename(
+            title="选择Map文件",
+            filetypes=[("Map文件", "*.map"), ("所有文件", "*.*")]
+        )
+        
+        if not file_path:
+            return
+        
+        self.logger.info(f"正在从Map文件加载RTT控制块地址: {file_path}")
+        
+        # 提取RTT控制块地址
+        address = extract_rtt_address_from_map(file_path)
+        
+        if address > 0:
+            # 更新UI和配置
+            self.rtt_ctrl_block_addr_var.set(hex(address))
+            self.config.rtt_ctrl_block_addr = address
+            self.rtt_mode_var.set("direct")
+            self.on_rtt_mode_change()
+            
+            if self.config.auto_save:
+                self.config.save_config()
+                
+            self.logger.info(f"成功从Map文件提取RTT控制块地址: 0x{address:X}")
+        else:
+            messagebox.showerror("错误", "无法从Map文件中提取RTT控制块地址，请检查文件格式是否正确。")
+            self.logger.error("无法从Map文件中提取RTT控制块地址")
+
 def main():
     """主函数"""
     root = tk.Tk()

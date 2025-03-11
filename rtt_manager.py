@@ -20,6 +20,34 @@ def extract_serial_numbers(text):
     return matches
 
 
+def extract_rtt_address_from_map(map_file_path):
+    """从map文件中提取RTT控制块地址
+    
+    Args:
+        map_file_path: map文件路径
+        
+    Returns:
+        int: RTT控制块地址，如果未找到则返回0
+    """
+    try:
+        with open(map_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            map_content = f.read()
+            
+        # 匹配 _SEGGER_RTT 符号及其地址
+        # 示例: _SEGGER_RTT      0x20000668   Data         168  segger_rtt.o(.bss._SEGGER_RTT)
+        pattern = r'_SEGGER_RTT\s+0x([0-9a-fA-F]+)\s+\w+\s+\d+'
+        match = re.search(pattern, map_content)
+        
+        if match:
+            addr_hex = match.group(1)
+            return int(addr_hex, 16)
+        
+        return 0
+    except Exception as e:
+        logging.getLogger(__name__).error(f"从map文件提取RTT地址失败: {str(e)}")
+        return 0
+
+
 class RTTManager:
     def __init__(self, config):
         self.config = config
@@ -143,33 +171,38 @@ class RTTManager:
     def _setup_rtt(self):
         """设置RTT"""
         try:
+            # 根据RTT模式处理
+            if self.config.rtt_mode == "map":
+                # 如果是Map文件模式，尝试重新加载RTT地址
+                if self.config.map_file_path and os.path.exists(self.config.map_file_path):
+                    address = extract_rtt_address_from_map(self.config.map_file_path)
+                    if address > 0:
+                        self.config.rtt_ctrl_block_addr = address
+                        self.logger.info(f"已从Map文件重新加载RTT控制块地址: 0x{address:X}")
+                    else:
+                        self.logger.error("无法从Map文件中提取RTT控制块地址")
+                        raise ValueError("无法从Map文件中提取RTT控制块地址")
+                else:
+                    self.logger.error("Map文件路径无效或文件不存在")
+                    raise ValueError("Map文件路径无效或文件不存在")
+            
+            # 使用指定地址启动RTT
             if self.config.rtt_ctrl_block_addr:
                 # 使用指定地址
                 self.jlink.rtt_start(self.config.rtt_ctrl_block_addr)
                 self.logger.info(f"RTT已启动，控制块地址: 0x{self.config.rtt_ctrl_block_addr:08X}")
             else:
-                # 自动搜索RTT控制块
-                self.jlink.rtt_region_start = self.config.rtt_search_start
-                self.jlink.rtt_region_end = self.config.rtt_search_start + self.config.rtt_search_length
-                self.jlink.rtt_search_step = self.config.rtt_search_step
-                self.logger.info(f"正在搜索RTT控制块，范围: 0x{self.jlink.rtt_region_start:08X} - 0x{self.jlink.rtt_region_end:08X}")
-                self.jlink.rtt_start()
-                
-                # 等待搜索完成
-                for _ in range(50):  # 最多等待5秒
-                    try:
-                        # 尝试读取数据，如果成功说明RTT已就绪
-                        data = self.jlink.rtt_read(self.config.rtt_buffer_index, 1)
-                        if data is not None:
-                            self.logger.info("RTT控制块搜索完成")
-                            return
-                    except:
-                        pass
-                    time.sleep(0.1)
-                self.logger.warning("未找到RTT控制块")
+                self.logger.error("未设置RTT控制块地址")
+                raise ValueError("未设置RTT控制块地址")
+            
+            # 设置RTT状态
+            self.rtt_started = True
+            
+            return True
         except Exception as e:
             self.logger.error(f"RTT启动失败: {str(e)}")
-            raise
+            self.rtt_started = False
+            return False
 
     def read_data(self):
         """读取RTT数据，返回bytes"""
