@@ -32,7 +32,7 @@ pip install pylink-square>=0.14.2
 
 ## 配置
 
-在`config.json`文件中可以修改以下配置，或通过GUI界面进行配置：
+在 `config.json`文件中可以修改以下配置，或通过GUI界面进行配置：
 
 - `target_device`: 目标设备类型（例如"STM32F407VE"）
 - `debug_interface`: 调试接口，可选"SWD"或"JTAG"
@@ -65,7 +65,7 @@ python main.py
 ### 命令行模式
 
 1. 连接JLink设备到计算机
-2. 根据实际情况修改`config.json`中的配置
+2. 根据实际情况修改 `config.json`中的配置
 3. 运行程序：
 
 ```bash
@@ -73,7 +73,7 @@ python rtt2udp.py
 ```
 
 4. 程序将开始将RTT数据转发到指定的UDP端口
-5. 按`Ctrl+C`停止程序
+5. 按 `Ctrl+C`停止程序
 
 ## 项目结构
 
@@ -106,6 +106,7 @@ while True:
 
 ## 故障排除
 
+- **如果使用过程中，进行调试，工具则会异常，需要点击停止后重新启用，即可正常使用**
 - 确保JLink设备已正确连接
 - 验证目标设备类型是否正确
 - 检查RTT是否已在目标设备上启用
