@@ -1,0 +1,19 @@
+# RTT2UDP项目依赖
+# 核心依赖
+pylink-square>=0.14.2  # 用于与JLink设备通信
+tkinter  # GUI界面，通常是Python标准库的一部分
+
+# 标准库依赖（无需安装，列出以便于理解）
+# - os
+# - sys
+# - time
+# - logging
+# - threading
+# - queue
+# - socket
+# - json
+# - re
+# - ctypes
+
+# 安装方法:
+# pip install -r requirements.txt
