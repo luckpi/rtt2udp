@@ -1,7 +1,7 @@
 {
     "target_device": "Cortex-M0+",
     "debug_interface": "SWD",
-    "debug_speed": "auto",
+    "debug_speed": "5000",
     "rtt_ctrl_block_addr": 536872428,
     "rtt_buffer_index": 0,
     "rtt_search_start": 536870912,

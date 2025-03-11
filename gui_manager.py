@@ -558,12 +558,18 @@ class GUIManager:
     
     def on_closing(self):
         """窗口关闭回调"""
+        # 保存配置
+        if hasattr(self.config, 'save_config'):
+            self.config.save_config()
+            
         if self.stop_button['state'] == tk.NORMAL:
             if messagebox.askokcancel("退出", "转发服务正在运行，确定要退出吗？"):
                 self._on_stop_click()
-                self.root.destroy()
-        else:
-            self.root.destroy()
+                # 窗口销毁由主程序处理
+            else:
+                # 用户取消关闭
+                return
+        # 不在这里调用destroy，让主程序处理
     
     def _select_target_device(self):
         """选择目标设备"""

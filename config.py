@@ -24,7 +24,7 @@ class Config:
         self.rtt_search_start = 0x20000000  # 搜索起始地址
         self.rtt_search_length = 0x1000  # 搜索长度
         self.rtt_search_step = 4  # 搜索步长
-        self.polling_interval = 0.01  # 轮询间隔，单位秒
+        self.polling_interval = 0.001  # 轮询间隔，单位秒
         
         # UDP配置
         self.udp_ip = "127.0.0.1"  # UDP目标IP地址

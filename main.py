@@ -37,9 +37,6 @@ class RTT2UDPApplication:
             on_stop=self.stop_conversion
         )
         
-        # 设置窗口关闭事件
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-    
     def start_conversion(self):
         """启动转发服务"""
         # 获取JLink序列号
@@ -74,10 +71,16 @@ class RTT2UDPApplication:
     
     def on_closing(self):
         """窗口关闭处理"""
+        # 确保停止所有转发服务
+        self.stop_conversion()
         self.gui_manager.on_closing()
-    
+        # 手动销毁窗口
+        self.root.destroy()
+        
     def run(self):
         """运行应用程序"""
+        # 设置窗口关闭事件
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.mainloop()
 
 def main():

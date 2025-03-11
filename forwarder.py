@@ -16,7 +16,10 @@ class RTTUDPForwarder:
         self.udp_manager = udp_manager
         self.config = config
         self.running = False
-        self.thread = None
+        self.read_thread = None
+        self.send_thread = None
+        self.data_buffer = bytearray()
+        self.buffer_lock = threading.Lock()
         self.logger = logging.getLogger(__name__)
     
     def start(self):
@@ -27,9 +30,13 @@ class RTTUDPForwarder:
         
         # 启动转发线程
         self.running = True
-        self.thread = threading.Thread(target=self._forward_loop)
-        self.thread.daemon = True
-        self.thread.start()
+        self.read_thread = threading.Thread(target=self._read_loop)
+        self.read_thread.daemon = True
+        self.read_thread.start()
+        
+        self.send_thread = threading.Thread(target=self._send_loop)
+        self.send_thread.daemon = True
+        self.send_thread.start()
         
         self.logger.info("RTT到UDP转发服务已启动")
         return True
@@ -39,34 +46,77 @@ class RTTUDPForwarder:
         if not self.running:
             return
         
+        # 设置停止标志
         self.running = False
-        if self.thread:
-            self.thread.join(timeout=2.0)
-            self.thread = None
+        
+        # 等待线程结束，使用更长的超时时间
+        if self.read_thread and self.read_thread.is_alive():
+            self.logger.info("等待读取线程结束...")
+            self.read_thread.join(timeout=5.0)
+            if self.read_thread.is_alive():
+                self.logger.warning("读取线程未能在超时时间内结束")
+            self.read_thread = None
+        
+        if self.send_thread and self.send_thread.is_alive():
+            self.logger.info("等待发送线程结束...")
+            self.send_thread.join(timeout=5.0)
+            if self.send_thread.is_alive():
+                self.logger.warning("发送线程未能在超时时间内结束")
+            self.send_thread = None
+        
+        # 清空缓冲区
+        with self.buffer_lock:
+            self.data_buffer = bytearray()
         
         self.logger.info("RTT到UDP转发服务已停止")
     
-    def _forward_loop(self):
-        """转发数据的主循环"""
-        buffer_index = self.config.rtt_buffer_index
-        
+    def _read_loop(self):
+        """读取数据的循环"""
         try:
             while self.running:
                 # 读取RTT数据
-                data = self.rtt_manager.read_data(buffer_index)
+                data = self.rtt_manager.read_data()
                 
                 if data:
-                    # 发送数据到UDP
-                    self.udp_manager.send_data(data)
+                    # 将数据添加到缓冲区
+                    with self.buffer_lock:
+                        self.data_buffer.extend(data)
                     
-                    if self.config.debug:
-                        try:
-                            self.logger.debug(f"转发数据: {data.decode('utf-8', errors='replace')}")
-                        except:
-                            self.logger.debug(f"转发二进制数据: {len(data)} 字节")
+                    # 如果有数据，立即继续读取，不等待
+                    continue
                 
                 # 短暂休眠以避免CPU占用过高
                 time.sleep(self.config.polling_interval)
         except Exception as e:
-            self.logger.error(f"数据转发过程中发生错误: {str(e)}")
+            self.logger.error(f"数据读取过程中发生错误: {str(e)}")
+            self.running = False
+    
+    def _send_loop(self):
+        """发送数据的循环"""
+        try:
+            last_send_time = time.time()
+            
+            while self.running:
+                current_time = time.time()
+                buffer_to_send = None
+                
+                # 检查是否有数据需要发送
+                with self.buffer_lock:
+                    if len(self.data_buffer) > 0:
+                        # 如果缓冲区超过阈值或距离上次发送超过时间阈值，则发送数据
+                        if len(self.data_buffer) >= 8192 or (current_time - last_send_time) >= 0.005:
+                            buffer_to_send = bytes(self.data_buffer)
+                            self.data_buffer = bytearray()
+                
+                # 发送数据
+                if buffer_to_send:
+                    self.udp_manager.send_data(buffer_to_send)
+                    if self.config.debug:
+                        self.logger.debug(f"转发数据包: {len(buffer_to_send)} 字节")
+                    last_send_time = time.time()
+                
+                # 短暂休眠以避免CPU占用过高
+                time.sleep(0.001)
+        except Exception as e:
+            self.logger.error(f"数据发送过程中发生错误: {str(e)}")
             self.running = False

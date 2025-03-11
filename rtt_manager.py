@@ -1,6 +1,15 @@
-import pylink
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+RTT管理器模块
+负责与JLink设备通信并管理RTT连接
+"""
+
+import os
 import time
 import logging
+import pylink
 import re
 
 
@@ -15,7 +24,12 @@ class RTTManager:
     def __init__(self, config):
         self.config = config
         self.jlink = None
-        self.logger = logging.getLogger("RTTManager")
+        self.logger = logging.getLogger(__name__)
+        self.connected = False
+        self.rtt_started = False
+        self.last_buffer_info = None
+        self.last_buffer_check_time = 0
+        self.buffer_check_interval = 0.001  # 缓冲区状态检查间隔，单位秒
         
     def get_jlink_list(self):
         """获取已连接的JLink设备列表"""
@@ -87,15 +101,35 @@ class RTTManager:
             return False
 
     def disconnect(self):
-        """断开JLink连接"""
+        """断开与JLink的连接"""
+        if not self.jlink:
+            return
+        
         try:
-            if self.jlink:
-                self.jlink.rtt_stop()
+            # 停止RTT
+            if self.rtt_started:
+                self.logger.info("停止RTT...")
+                try:
+                    self.jlink.rtt_stop()
+                except Exception as e:
+                    self.logger.error(f"停止RTT失败: {str(e)}")
+                self.rtt_started = False
+            
+            # 关闭JLink连接
+            self.logger.info("断开JLink连接...")
+            try:
                 self.jlink.close()
-                self.jlink = None
-            self.logger.info("已断开JLink连接")
+            except Exception as e:
+                self.logger.error(f"关闭JLink连接失败: {str(e)}")
+            
+            # 清理资源
+            self.jlink = None
+            self.connected = False
+            self.last_buffer_info = None
+            
+            self.logger.info("JLink连接已断开")
         except Exception as e:
-            self.logger.error(f"断开连接失败: {str(e)}")
+            self.logger.error(f"断开JLink连接过程中发生错误: {str(e)}")
 
     def is_connected(self):
         """检查是否已连接JLink"""
@@ -150,16 +184,58 @@ class RTTManager:
             self.logger.error(f"RTT启动失败: {str(e)}")
             raise
 
-    def read_data(self, buffer_index=None, size=1024):
-        """从RTT缓冲区读取数据"""
+    def read_data(self):
+        """读取RTT数据，返回bytes"""
         try:
-            if buffer_index is None:
-                buffer_index = self.config.rtt_buffer_index
-            data = self.jlink.rtt_read(buffer_index, size)
-            if data:
-                # 将列表转换为字节
+            if not self.jlink:
+                return None
+            
+            current_time = time.time()
+            
+            # 检查是否需要更新缓冲区状态
+            if self.last_buffer_info is None or (current_time - self.last_buffer_check_time) >= self.buffer_check_interval:
+                try:
+                    # 尝试获取缓冲区状态
+                    buffer_info = self.jlink.rtt_get_buf_status(self.config.rtt_buffer_index)
+                    self.last_buffer_info = buffer_info
+                    self.last_buffer_check_time = current_time
+                    
+                    if not buffer_info or not hasattr(buffer_info, 'buffersize_used') or buffer_info.buffersize_used <= 0:
+                        # 如果无法获取缓冲区状态或没有数据，返回None
+                        return None
+                    
+                    # 获取可读取的数据长度，最大读取128KB
+                    buffered = min(buffer_info.buffersize_used, 131072)
+                    self.logger.debug(f"RTT缓冲区已使用: {buffer_info.buffersize_used} 字节，读取: {buffered} 字节")
+                except Exception as e:
+                    self.logger.debug(f"获取RTT缓冲区状态失败: {str(e)}，使用默认读取大小")
+                    buffered = 65536
+            else:
+                # 使用缓存的缓冲区状态
+                buffer_info = self.last_buffer_info
+                if not buffer_info or not hasattr(buffer_info, 'buffersize_used') or buffer_info.buffersize_used <= 0:
+                    return None
+                
+                # 获取可读取的数据长度，最大读取128KB
+                buffered = min(buffer_info.buffersize_used, 131072)
+            
+            # 如果没有数据需要读取，直接返回
+            if buffered <= 0:
+                return None
+            
+            # 读取数据
+            data = self.jlink.rtt_read(self.config.rtt_buffer_index, buffered)
+            if not data:
+                return None
+            
+            # 转换为bytes
+            if isinstance(data, list):
+                # 将列表转换为bytes
                 return bytes(data)
-            return None
+            elif isinstance(data, bytes):
+                return data
+            else:
+                return None
         except Exception as e:
             self.logger.error(f"读取RTT数据失败: {str(e)}")
             return None
