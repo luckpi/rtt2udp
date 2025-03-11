@@ -22,7 +22,15 @@ class UDPManager:
                 self.close()
             
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.logger.info(f"UDP socket已创建，目标地址: {self.config.udp_ip}:{self.config.udp_port}")
+            
+            # 绑定到指定或随机端口
+            local_port = self.config.local_port
+            self.socket.bind(('0.0.0.0', local_port))
+            local_addr = self.socket.getsockname()
+            
+            self.logger.info(f"UDP socket已创建")
+            self.logger.info(f"本地地址: {local_addr[0]}:{local_addr[1]}")
+            self.logger.info(f"目标地址: {self.config.udp_ip}:{self.config.udp_port}")
             return True
         except Exception as e:
             self.logger.error(f"创建UDP socket失败: {str(e)}")

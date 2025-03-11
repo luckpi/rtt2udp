@@ -1,13 +1,16 @@
 {
     "target_device": "Cortex-M0+",
+    "debug_interface": "SWD",
+    "debug_speed": "auto",
+    "rtt_ctrl_block_addr": 536872428,
     "rtt_buffer_index": 0,
-    "polling_interval": 0.01,
-    "rtt_ctrl_block_addr": 0,
     "rtt_search_start": 536870912,
     "rtt_search_length": 4096,
-    "rtt_search_step": 4,
+    "rtt_search_step": 1,
+    "polling_interval": 0.01,
     "udp_ip": "127.0.0.1",
     "udp_port": 8888,
+    "local_port": 8887,
     "debug": false,
     "auto_save": true
 }

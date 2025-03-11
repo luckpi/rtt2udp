@@ -74,19 +74,32 @@ class GUIManager:
         # 目标设备
         self.target_device_var = tk.StringVar(value=self.config.target_device)
         
+        # 调试接口
+        self.debug_interface_var = tk.StringVar(value=self.config.debug_interface)
+        
+        # 调试速度
+        self.debug_speed_var = tk.StringVar(value=self.config.debug_speed)
+        
         # RTT配置
         self.buffer_index_var = tk.IntVar(value=self.config.rtt_buffer_index)
         self.rtt_mode_var = tk.StringVar(
-            value="search" if self.config.rtt_ctrl_block_addr == 0 else "direct"
+            value="auto" if self.config.rtt_ctrl_block_addr == 0 else "manual"
         )
-        self.rtt_ctrl_block_addr_var = tk.StringVar(value=hex(self.config.rtt_ctrl_block_addr))
-        self.rtt_search_start_var = tk.StringVar(value=hex(self.config.rtt_search_start))
-        self.rtt_search_length_var = tk.StringVar(value=hex(self.config.rtt_search_length))
+        self.rtt_addr_var = tk.StringVar(
+            value=f"0x{self.config.rtt_ctrl_block_addr:X}" if self.config.rtt_ctrl_block_addr else ""
+        )
+        self.rtt_search_start_var = tk.StringVar(
+            value=f"0x{self.config.rtt_search_start:X}"
+        )
+        self.rtt_search_length_var = tk.StringVar(
+            value=f"0x{self.config.rtt_search_length:X}"
+        )
         self.rtt_search_step_var = tk.IntVar(value=self.config.rtt_search_step)
         
         # UDP配置
         self.udp_ip_var = tk.StringVar(value=self.config.udp_ip)
         self.udp_port_var = tk.IntVar(value=self.config.udp_port)
+        self.local_port_var = tk.IntVar(value=self.config.local_port)
         
         # 其他配置
         self.polling_interval_var = tk.DoubleVar(value=self.config.polling_interval)
@@ -102,10 +115,7 @@ class GUIManager:
         config_frame.pack(fill=tk.X, pady=5)
         
         # JLink设备选择
-        self._create_jlink_selection(config_frame)
-        
-        # 目标设备选择
-        self._create_target_selection(config_frame)
+        self._create_jlink_config(config_frame)
         
         # RTT配置
         self._create_rtt_config(config_frame)
@@ -116,43 +126,90 @@ class GUIManager:
         # 其他选项
         self._create_other_options(config_frame)
     
-    def _create_jlink_selection(self, parent):
-        """创建JLink设备选择区域"""
-        frame = ttk.Frame(parent)
-        frame.pack(fill=tk.X, pady=5)
+    def _create_jlink_config(self, parent):
+        """创建JLink配置区域"""
+        jlink_frame = ttk.LabelFrame(parent, text="JLink配置", padding="5")
+        jlink_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(frame, text="JLink设备:").pack(side=tk.LEFT)
+        # JLink设备选择
+        device_frame = ttk.Frame(jlink_frame)
+        device_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(device_frame, text="JLink设备:").pack(side=tk.LEFT)
         self.jlink_device_combo = ttk.Combobox(
-            frame, 
+            device_frame, 
             textvariable=self.jlink_device_var,
             state="readonly",
-            width=40
+            width=30
         )
         self.jlink_device_combo.pack(side=tk.LEFT, padx=5)
         
         ttk.Button(
-            frame,
+            device_frame,
             text="刷新",
-            command=self.refresh_jlink_devices
+            command=self._refresh_jlink_devices
         ).pack(side=tk.LEFT)
-    
-    def _create_target_selection(self, parent):
-        """创建目标设备选择区域"""
-        frame = ttk.Frame(parent)
-        frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(frame, text="目标设备:").pack(side=tk.LEFT)
+        # 目标设备
+        target_frame = ttk.Frame(jlink_frame)
+        target_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(target_frame, text="目标设备:").pack(side=tk.LEFT)
         ttk.Entry(
-            frame,
+            target_frame,
             textvariable=self.target_device_var,
-            width=40
+            width=20
         ).pack(side=tk.LEFT, padx=5)
         
         ttk.Button(
-            frame,
+            target_frame,
             text="选择设备",
             command=self._select_target_device
         ).pack(side=tk.LEFT)
+        
+        # 调试接口和速度
+        debug_frame = ttk.Frame(jlink_frame)
+        debug_frame.pack(fill=tk.X, pady=2)
+        
+        # 调试接口
+        interface_frame = ttk.Frame(debug_frame)
+        interface_frame.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(interface_frame, text="调试接口:").pack(side=tk.LEFT)
+        ttk.Radiobutton(
+            interface_frame,
+            text="SWD",
+            variable=self.debug_interface_var,
+            value="SWD",
+            command=self._on_config_change
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(
+            interface_frame,
+            text="JTAG",
+            variable=self.debug_interface_var,
+            value="JTAG",
+            command=self._on_config_change
+        ).pack(side=tk.LEFT, padx=2)
+        
+        # 调试速度
+        speed_frame = ttk.Frame(debug_frame)
+        speed_frame.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(speed_frame, text="调试速度:").pack(side=tk.LEFT)
+        speed_values = [
+            "auto", "adaptive",
+            50000, 33000, 25000, 20000, 10000,
+            5000, 3000, 2000, 1000, 500,
+            200, 100, 50, 20, 10, 5
+        ]
+        ttk.OptionMenu(
+            speed_frame,
+            self.debug_speed_var,
+            self.config.debug_speed,
+            *speed_values,
+            command=lambda _: self._on_config_change()
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Label(speed_frame, text="kHz").pack(side=tk.LEFT)
     
     def _create_rtt_config(self, parent):
         """创建RTT配置区域"""
@@ -178,29 +235,29 @@ class GUIManager:
         ttk.Label(basic_frame, text="控制块模式:").pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(
             basic_frame,
-            text="直接设置",
+            text="自动",
             variable=self.rtt_mode_var,
-            value="direct",
+            value="auto",
             command=self._on_rtt_mode_change
         ).pack(side=tk.LEFT, padx=2)
         ttk.Radiobutton(
             basic_frame,
-            text="搜索模式",
+            text="手动",
             variable=self.rtt_mode_var,
-            value="search",
+            value="manual",
             command=self._on_rtt_mode_change
         ).pack(side=tk.LEFT, padx=2)
         
-        # 直接设置模式配置
-        self.direct_frame = ttk.Frame(rtt_frame)
-        self.direct_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(self.direct_frame, text="控制块地址:").pack(side=tk.LEFT, padx=5)
+        # 手动设置模式配置
+        self.manual_frame = ttk.Frame(rtt_frame)
+        self.manual_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(self.manual_frame, text="控制块地址:").pack(side=tk.LEFT, padx=5)
         ttk.Entry(
-            self.direct_frame,
-            textvariable=self.rtt_ctrl_block_addr_var,
+            self.manual_frame,
+            textvariable=self.rtt_addr_var,
             width=20
         ).pack(side=tk.LEFT, padx=5)
-        self.rtt_ctrl_block_addr_var.trace_add("write", self._on_config_change)
+        self.rtt_addr_var.trace_add("write", self._on_config_change)
         
         # 搜索模式配置
         self.search_frame = ttk.Frame(rtt_frame)
@@ -226,22 +283,6 @@ class GUIManager:
             width=10
         ).pack(side=tk.LEFT, padx=2)
         
-        # 搜索步长
-        step_frame = ttk.Frame(self.search_frame)
-        step_frame.pack(side=tk.LEFT, padx=5)
-        ttk.Label(step_frame, text="步长:").pack(side=tk.LEFT)
-        ttk.OptionMenu(
-            step_frame,
-            self.rtt_search_step_var,
-            self.config.rtt_search_step,
-            1, 2, 4, 8, 16
-        ).pack(side=tk.LEFT, padx=5)
-        
-        # 绑定配置更改事件
-        self.rtt_search_start_var.trace_add("write", self._on_config_change)
-        self.rtt_search_length_var.trace_add("write", self._on_config_change)
-        self.rtt_search_step_var.trace_add("write", self._on_config_change)
-        
         # 根据当前模式显示/隐藏相应的框架
         self._on_rtt_mode_change()
     
@@ -250,23 +291,35 @@ class GUIManager:
         udp_frame = ttk.LabelFrame(parent, text="UDP配置", padding="5")
         udp_frame.pack(fill=tk.X, pady=5)
         
-        # IP地址
-        ttk.Label(udp_frame, text="IP地址:").pack(side=tk.LEFT, padx=5)
+        # 目标IP和端口
+        target_frame = ttk.Frame(udp_frame)
+        target_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(target_frame, text="目标IP:").pack(side=tk.LEFT)
         ttk.Entry(
-            udp_frame,
+            target_frame,
             textvariable=self.udp_ip_var,
             width=15
         ).pack(side=tk.LEFT, padx=5)
         
-        # 端口
-        ttk.Label(udp_frame, text="端口:").pack(side=tk.LEFT, padx=5)
-        ttk.Spinbox(
-            udp_frame,
-            from_=1024,
-            to=65535,
+        ttk.Label(target_frame, text="目标端口:").pack(side=tk.LEFT)
+        ttk.Entry(
+            target_frame,
             textvariable=self.udp_port_var,
-            width=7
+            width=6
         ).pack(side=tk.LEFT, padx=5)
+        
+        # 本地端口
+        local_frame = ttk.Frame(udp_frame)
+        local_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(local_frame, text="本地端口:").pack(side=tk.LEFT)
+        ttk.Entry(
+            local_frame,
+            textvariable=self.local_port_var,
+            width=6
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Label(local_frame, text="(0表示自动分配)").pack(side=tk.LEFT)
     
     def _create_other_options(self, parent):
         """创建其他选项区域"""
@@ -375,7 +428,7 @@ class GUIManager:
         self.log_text.tag_config("warning", foreground="orange")
         self.log_text.tag_config("info", foreground="blue")
     
-    def refresh_jlink_devices(self):
+    def _refresh_jlink_devices(self):
         """刷新JLink设备列表"""
         import pylink
         try:
@@ -400,35 +453,22 @@ class GUIManager:
             self.jlink_device_combo['values'] = ["刷新失败"]
             self.jlink_device_combo.current(0)
     
-    def _select_target_device(self):
-        """选择目标设备"""
-        device = DeviceSelector.show_dialog(self.root, self.logger)
-        if device:
-            self.target_device_var.set(device)
-            self.config.target_device = device
-            self.logger.info(f"已选择目标设备: {device}")
-    
     def _on_config_change(self, *args):
         """配置更改回调"""
         self._update_config()
         if self.config.auto_save:
-            self.config.save_config()
+            if hasattr(self.config, 'save_config'):
+                self.config.save_config()
     
     def _on_rtt_mode_change(self):
         """RTT模式更改回调"""
         mode = self.rtt_mode_var.get()
-        if mode == "direct":
-            self.direct_frame.pack(fill=tk.X, pady=2)
+        if mode == "manual":
+            self.manual_frame.pack(fill=tk.X, pady=2)
             self.search_frame.pack_forget()
-            if self.config.rtt_ctrl_block_addr == 0:
-                self.config.rtt_ctrl_block_addr = 0x20000000
-                self.rtt_ctrl_block_addr_var.set(hex(self.config.rtt_ctrl_block_addr))
         else:
-            self.direct_frame.pack_forget()
+            self.manual_frame.pack_forget()
             self.search_frame.pack(fill=tk.X, pady=2)
-            if self.config.rtt_ctrl_block_addr != 0:
-                self.config.rtt_ctrl_block_addr = 0
-                self.rtt_ctrl_block_addr_var.set("0x0")
         
         self._on_config_change()
     
@@ -436,27 +476,59 @@ class GUIManager:
         """从UI更新配置"""
         try:
             self.config.target_device = self.target_device_var.get()
+            self.config.debug_interface = self.debug_interface_var.get()
+            self.config.debug_speed = self.debug_speed_var.get()
             self.config.rtt_buffer_index = self.buffer_index_var.get()
             
             # 更新RTT控制块配置
-            if self.rtt_mode_var.get() == "direct":
-                addr_str = self.rtt_ctrl_block_addr_var.get()
-                self.config.rtt_ctrl_block_addr = int(addr_str, 16) if addr_str.startswith("0x") else int(addr_str)
+            if self.rtt_mode_var.get() == "manual":
+                try:
+                    addr = self.rtt_addr_var.get()
+                    if addr.startswith("0x"):
+                        self.config.rtt_ctrl_block_addr = int(addr, 16)
+                    else:
+                        self.config.rtt_ctrl_block_addr = int(addr)
+                except:
+                    self.config.rtt_ctrl_block_addr = 0
             else:
                 self.config.rtt_ctrl_block_addr = 0
-                start_str = self.rtt_search_start_var.get()
-                length_str = self.rtt_search_length_var.get()
-                self.config.rtt_search_start = int(start_str, 16) if start_str.startswith("0x") else int(start_str)
-                self.config.rtt_search_length = int(length_str, 16) if length_str.startswith("0x") else int(length_str)
-                self.config.rtt_search_step = self.rtt_search_step_var.get()
             
+            # 更新RTT搜索配置
+            try:
+                start = self.rtt_search_start_var.get()
+                if start.startswith("0x"):
+                    self.config.rtt_search_start = int(start, 16)
+                else:
+                    self.config.rtt_search_start = int(start)
+            except:
+                pass
+            
+            try:
+                length = self.rtt_search_length_var.get()
+                if length.startswith("0x"):
+                    self.config.rtt_search_length = int(length, 16)
+                else:
+                    self.config.rtt_search_length = int(length)
+            except:
+                pass
+            
+            self.config.rtt_search_step = self.rtt_search_step_var.get()
+            
+            # 更新UDP配置
             self.config.udp_ip = self.udp_ip_var.get()
             self.config.udp_port = self.udp_port_var.get()
+            self.config.local_port = self.local_port_var.get()
+            
+            # 更新其他配置
             self.config.polling_interval = self.polling_interval_var.get()
             self.config.debug = self.debug_var.get()
             self.config.auto_save = self.auto_save_var.get()
-        except ValueError as e:
-            self.logger.error(f"配置更新失败: {str(e)}")
+            
+            # 保存配置
+            if hasattr(self.config, 'save') and self.config.auto_save:
+                self.config.save()
+        except Exception as e:
+            self.logger.error(f"更新配置失败: {str(e)}")
     
     def _on_start_click(self):
         """启动按钮点击回调"""
@@ -492,3 +564,12 @@ class GUIManager:
                 self.root.destroy()
         else:
             self.root.destroy()
+    
+    def _select_target_device(self):
+        """选择目标设备"""
+        from device_selector import DeviceSelector
+        device = DeviceSelector.show_dialog(self.root, self.logger)
+        if device:
+            self.target_device_var.set(device)
+            self.config.target_device = device
+            self.logger.info(f"已选择目标设备: {device}")

@@ -1,21 +1,37 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-RTT管理器模块
-负责与JLink设备通信和RTT控制
-"""
-
+import pylink
 import time
 import logging
-import pylink
+import re
+
+
+def extract_serial_numbers(text):
+    """从文本中提取序列号"""
+    pattern = r"Serial No\. (\d+)"
+    matches = re.findall(pattern, text)
+    return matches
+
 
 class RTTManager:
     def __init__(self, config):
         self.config = config
         self.jlink = None
-        self.logger = logging.getLogger(__name__)
-    
+        self.logger = logging.getLogger("RTTManager")
+        
+    def get_jlink_list(self):
+        """获取已连接的JLink设备列表"""
+        try:
+            if not self.jlink:
+                self.jlink = pylink.JLink()
+            
+            jlink_list = self.jlink.connected_emulators()
+            jlink_list_sn = []
+            for i in jlink_list:
+                jlink_list_sn.append(extract_serial_numbers(str(i))[0])
+            return jlink_list_sn
+        except Exception as e:
+            self.logger.error(f"获取JLink列表失败: {str(e)}")
+            return []
+
     def connect(self, serial_number):
         """连接到JLink设备"""
         try:
@@ -25,14 +41,37 @@ class RTTManager:
             # 连接JLink
             self.jlink = pylink.JLink()
             self.jlink.open(serial_no=serial_number)
+            self.logger.info(f"已连接到JLink设备 {serial_number}")
             
             # 设置设备类型
             if not self.config.target_device:
                 raise ValueError("未选择目标设备")
             
-            # 连接到目标设备
-            self.jlink.set_tif(pylink.enums.JLinkInterfaces.SWD)
-            self.jlink.connect(self.config.target_device)
+            # 设置调试接口
+            if self.config.debug_interface.upper() == "SWD":
+                self.jlink.set_tif(pylink.enums.JLinkInterfaces.SWD)
+                self.logger.info("使用SWD接口连接")
+            else:
+                self.jlink.set_tif(pylink.enums.JLinkInterfaces.JTAG)
+                self.logger.info("使用JTAG接口连接")
+            
+            # 设置调试速度
+            speed = self.config.debug_speed
+            if speed in ["auto", "adaptive"]:
+                self.logger.info(f"使用{speed}调试速度")
+                self.jlink.connect(self.config.target_device, speed)
+            else:
+                try:
+                    speed_khz = int(speed)
+                    self.jlink.set_speed(speed_khz)
+                    self.logger.info(f"设置调试速度为 {speed_khz} kHz")
+                    # 连接到目标设备
+                    self.jlink.connect(self.config.target_device)
+                except ValueError:
+                    self.logger.warning(f"无效的调试速度值: {speed}，使用auto模式")
+                    self.jlink.connect(self.config.target_device, "auto")
+            
+            self.logger.info(f"已连接到目标设备 {self.config.target_device}")
             
             # 等待设备运行
             self.logger.info("等待目标设备运行...")
@@ -46,105 +85,94 @@ class RTTManager:
             self.logger.error(f"连接目标设备失败: {str(e)}")
             self.disconnect()
             return False
-    
+
+    def disconnect(self):
+        """断开JLink连接"""
+        try:
+            if self.jlink:
+                self.jlink.rtt_stop()
+                self.jlink.close()
+                self.jlink = None
+            self.logger.info("已断开JLink连接")
+        except Exception as e:
+            self.logger.error(f"断开连接失败: {str(e)}")
+
+    def is_connected(self):
+        """检查是否已连接JLink"""
+        return self.jlink and self.jlink.connected()
+
+    def target_connected(self):
+        """检查是否已连接目标设备"""
+        if not self.is_connected():
+            return False
+        return self.jlink.target_connected()
+
+    def get_supported_devices(self):
+        """获取支持的设备列表"""
+        try:
+            if not self.jlink:
+                self.jlink = pylink.JLink()
+            num_devices = self.jlink.num_supported_devices()
+            devices = [self.jlink.supported_device(i) for i in range(num_devices)]
+            return devices
+        except Exception as e:
+            self.logger.error(f"获取设备列表失败: {str(e)}")
+            return []
+
     def _setup_rtt(self):
         """设置RTT"""
-        for i in range(5):  # 最多重试5次
-            try:
-                if self.config.rtt_ctrl_block_addr > 0:
-                    # 直接设置模式
-                    self.logger.info(f"使用指定的控制块地址: 0x{self.config.rtt_ctrl_block_addr:X}")
-                    self.jlink.rtt_control_block_address = self.config.rtt_ctrl_block_addr
-                    self.jlink.rtt_start()
-                else:
-                    # 搜索模式
-                    search_range = (self.config.rtt_search_start, 
-                                  self.config.rtt_search_start + self.config.rtt_search_length)
-                    self.logger.info(f"搜索控制块，起始地址: 0x{search_range[0]:X}, "
-                                   f"结束地址: 0x{search_range[1]:X}, "
-                                   f"步长: {self.config.rtt_search_step}")
-                    
-                    # 设置搜索参数
-                    self.jlink.rtt_region_start = search_range[0]
-                    self.jlink.rtt_region_end = search_range[1]
-                    self.jlink.rtt_search_step = self.config.rtt_search_step
-                    
-                    # 启动RTT搜索
-                    self.jlink.rtt_start()
-                    
-                    # 等待控制块被找到
-                    if not self._wait_for_control_block():
-                        raise Exception("未找到RTT控制块")
-                
-                # 验证缓冲区
-                self._verify_buffers()
-                return
-            except Exception as e:
-                if i == 4:  # 最后一次尝试失败
-                    raise e
-                self.logger.warning(f"RTT启动失败，正在重试({i+1}/5): {str(e)}")
-                time.sleep(0.5)
-    
-    def _wait_for_control_block(self, timeout=5):
-        """等待RTT控制块被找到"""
-        self.logger.info("等待RTT控制块被找到...")
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                # 尝试获取控制块地址
-                addr = self.jlink.rtt_control_block_address
-                if addr > 0:
-                    self.logger.info(f"找到RTT控制块，地址: 0x{addr:X}")
-                    return True
-                
-                # 检查是否还在搜索
-                if not self.jlink.rtt_is_searching():
-                    # 搜索已完成但未找到控制块
-                    if addr == 0:
-                        self.logger.warning("搜索完成，未找到RTT控制块")
-                        return False
-                    # 搜索完成且找到控制块
-                    self.logger.info(f"找到RTT控制块，地址: 0x{addr:X}")
-                    return True
-            except Exception as e:
-                self.logger.debug(f"等待RTT控制块时发生错误: {str(e)}")
-            
-            # 让出CPU时间，避免界面卡死
-            time.sleep(0.1)
-        
-        self.logger.warning("等待RTT控制块超时")
-        return False
-    
-    def _verify_buffers(self):
-        """验证RTT缓冲区"""
-        buffer_count = self.jlink.rtt_get_num_up_buffers()
-        self.logger.info(f"发现 {buffer_count} 个上行缓冲区")
-        if buffer_count == 0:
-            raise Exception("未找到RTT缓冲区")
-        
-        if self.config.rtt_buffer_index >= buffer_count:
-            self.logger.warning(f"缓冲区索引 {self.config.rtt_buffer_index} 超出范围，已重置为0")
-            self.config.rtt_buffer_index = 0
-            return 0
-        return self.config.rtt_buffer_index
-    
-    def read_data(self, buffer_index, size=1024):
-        """读取RTT数据"""
-        if not self.jlink:
-            return None
         try:
-            return self.jlink.rtt_read(buffer_index, size)
+            if self.config.rtt_ctrl_block_addr:
+                # 使用指定地址
+                self.jlink.rtt_start(self.config.rtt_ctrl_block_addr)
+                self.logger.info(f"RTT已启动，控制块地址: 0x{self.config.rtt_ctrl_block_addr:08X}")
+            else:
+                # 自动搜索RTT控制块
+                self.jlink.rtt_region_start = self.config.rtt_search_start
+                self.jlink.rtt_region_end = self.config.rtt_search_start + self.config.rtt_search_length
+                self.jlink.rtt_search_step = self.config.rtt_search_step
+                self.logger.info(f"正在搜索RTT控制块，范围: 0x{self.jlink.rtt_region_start:08X} - 0x{self.jlink.rtt_region_end:08X}")
+                self.jlink.rtt_start()
+                
+                # 等待搜索完成
+                for _ in range(50):  # 最多等待5秒
+                    try:
+                        # 尝试读取数据，如果成功说明RTT已就绪
+                        data = self.jlink.rtt_read(self.config.rtt_buffer_index, 1)
+                        if data is not None:
+                            self.logger.info("RTT控制块搜索完成")
+                            return
+                    except:
+                        pass
+                    time.sleep(0.1)
+                self.logger.warning("未找到RTT控制块")
+        except Exception as e:
+            self.logger.error(f"RTT启动失败: {str(e)}")
+            raise
+
+    def read_data(self, buffer_index=None, size=1024):
+        """从RTT缓冲区读取数据"""
+        try:
+            if buffer_index is None:
+                buffer_index = self.config.rtt_buffer_index
+            data = self.jlink.rtt_read(buffer_index, size)
+            if data:
+                # 将列表转换为字节
+                return bytes(data)
+            return None
         except Exception as e:
             self.logger.error(f"读取RTT数据失败: {str(e)}")
             return None
-    
-    def disconnect(self):
-        """断开连接"""
-        if self.jlink:
-            try:
-                self.jlink.rtt_stop()
-                self.jlink.close()
-            except:
-                pass
-            finally:
-                self.jlink = None
+
+    def write(self, data, buffer_index=None):
+        """写入数据到RTT缓冲区"""
+        try:
+            if buffer_index is None:
+                buffer_index = self.config.rtt_buffer_index
+            if isinstance(data, str):
+                data = list(data.encode("ascii"))
+            self.jlink.rtt_write(buffer_index, data)
+            return True
+        except Exception as e:
+            self.logger.error(f"写入RTT数据失败: {str(e)}")
+            return False
