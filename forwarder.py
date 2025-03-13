@@ -3,7 +3,7 @@
 
 """
 数据转发器模块
-负责RTT数据到UDP的转发
+负责RTT数据到UDP的转发和UDP数据到RTT的转发
 """
 
 import time
@@ -111,12 +111,78 @@ class RTTUDPForwarder:
                 # 发送数据
                 if buffer_to_send:
                     self.udp_manager.send_data(buffer_to_send)
-                    if self.config.debug:
-                        self.logger.debug(f"转发数据包: {len(buffer_to_send)} 字节")
                     last_send_time = time.time()
                 
                 # 短暂休眠以避免CPU占用过高
                 time.sleep(0.001)
         except Exception as e:
             self.logger.error(f"数据发送过程中发生错误: {str(e)}")
+            self.running = False
+
+
+class UDPRTTForwarder:
+    def __init__(self, rtt_manager, udp_manager, config):
+        self.rtt_manager = rtt_manager
+        self.udp_manager = udp_manager
+        self.config = config
+        self.running = False
+        self.receive_thread = None
+        self.data_buffer = bytearray()
+        self.buffer_lock = threading.Lock()
+        self.logger = logging.getLogger(__name__)
+    
+    def start(self):
+        """启动UDP到RTT转发"""
+        if self.running:
+            self.logger.warning("UDP到RTT转发服务已经在运行")
+            return False
+        
+        # 启动接收线程
+        self.running = True
+        self.receive_thread = threading.Thread(target=self._receive_loop)
+        self.receive_thread.daemon = True
+        self.receive_thread.start()
+        
+        self.logger.info("UDP到RTT转发服务已启动")
+        return True
+    
+    def stop(self):
+        """停止UDP到RTT转发"""
+        if not self.running:
+            return
+        
+        # 设置停止标志
+        self.running = False
+        
+        # 等待线程结束
+        if self.receive_thread and self.receive_thread.is_alive():
+            self.logger.info("等待UDP接收线程结束...")
+            self.receive_thread.join(timeout=5.0)
+            if self.receive_thread.is_alive():
+                self.logger.warning("UDP接收线程未能在超时时间内结束")
+            self.receive_thread = None
+        
+        # 清空缓冲区
+        with self.buffer_lock:
+            self.data_buffer = bytearray()
+        
+        self.logger.info("UDP到RTT转发服务已停止")
+    
+    def _receive_loop(self):
+        """接收UDP数据并转发到RTT的循环"""
+        try:
+            while self.running:
+                # 接收UDP数据
+                data = self.udp_manager.receive_data(timeout=0.1)
+                
+                if data:
+                    # 将数据写入RTT
+                    success = self.rtt_manager.write(data)
+                    if not success:
+                        self.logger.warning("写入RTT数据失败")
+                
+                # 短暂休眠以避免CPU占用过高
+                time.sleep(0.001)
+        except Exception as e:
+            self.logger.error(f"UDP接收过程中发生错误: {str(e)}")
             self.running = False

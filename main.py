@@ -3,7 +3,7 @@
 
 """
 RTT2UDP主程序
-集成GUI、RTT和UDP管理器，实现RTT数据到UDP的转发
+集成GUI、RTT和UDP管理器，实现RTT数据到UDP的转发和UDP数据到RTT的转发
 """
 
 import tkinter as tk
@@ -12,7 +12,7 @@ import os
 from config import Config
 from rtt_manager import RTTManager
 from udp_manager import UDPManager
-from forwarder import RTTUDPForwarder
+from forwarder import RTTUDPForwarder, UDPRTTForwarder
 from gui_manager import GUIManager
 
 class RTT2UDPApplication:
@@ -30,7 +30,8 @@ class RTT2UDPApplication:
         # 创建管理器
         self.rtt_manager = RTTManager(self.config)
         self.udp_manager = UDPManager(self.config)
-        self.forwarder = RTTUDPForwarder(self.rtt_manager, self.udp_manager, self.config)
+        self.rtt_to_udp_forwarder = RTTUDPForwarder(self.rtt_manager, self.udp_manager, self.config)
+        self.udp_to_rtt_forwarder = UDPRTTForwarder(self.rtt_manager, self.udp_manager, self.config)
         self.gui_manager = GUIManager(
             self.root,
             self.config,
@@ -58,8 +59,15 @@ class RTT2UDPApplication:
             self.rtt_manager.disconnect()
             return False
         
-        # 启动转发
-        if not self.forwarder.start():
+        # 启动RTT到UDP转发
+        if not self.rtt_to_udp_forwarder.start():
+            self.udp_manager.close()
+            self.rtt_manager.disconnect()
+            return False
+        
+        # 启动UDP到RTT转发
+        if not self.udp_to_rtt_forwarder.start():
+            self.rtt_to_udp_forwarder.stop()
             self.udp_manager.close()
             self.rtt_manager.disconnect()
             return False
@@ -72,7 +80,8 @@ class RTT2UDPApplication:
     def stop_conversion(self):
         """停止转发服务"""
         self.forwarding_active = False
-        self.forwarder.stop()
+        self.rtt_to_udp_forwarder.stop()
+        self.udp_to_rtt_forwarder.stop()
         self.udp_manager.close()
         self.rtt_manager.disconnect()
         return True

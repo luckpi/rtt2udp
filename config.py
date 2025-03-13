@@ -45,7 +45,6 @@ class Config:
         
         # 其他配置
         self.polling_interval = 0.001  # 轮询间隔，单位秒
-        self.debug = False  # 是否打印调试信息
         self.auto_save = True  # 是否自动保存配置
         
         # 尝试加载配置文件
@@ -100,7 +99,6 @@ class Config:
                 "udp_port": self.udp_port,
                 "local_port": self.local_port,
                 "polling_interval": self.polling_interval,
-                "debug": self.debug,
                 "auto_save": self.auto_save
             }
             
@@ -129,7 +127,6 @@ class Config:
                     self.udp_port = config_data.get("udp_port", self.udp_port)
                     self.local_port = config_data.get("local_port", self.local_port)
                     self.polling_interval = config_data.get("polling_interval", self.polling_interval)
-                    self.debug = config_data.get("debug", self.debug)
                     self.auto_save = config_data.get("auto_save", self.auto_save)
                 
                 self.logger.info(f"已从 {self.config_file} 加载配置")

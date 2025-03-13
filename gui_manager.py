@@ -32,8 +32,8 @@ class GUIManager:
         
         # 设置窗口
         self.root.title("RTT2UDP 转换器")
-        self.root.geometry("800x600")
-        self.root.minsize(800, 600)
+        self.root.geometry("800x700")  # 增加窗口高度
+        self.root.minsize(800, 700)    # 增加最小窗口高度
         
         # 创建日志队列和处理器
         self.log_queue = queue.Queue()
@@ -99,7 +99,6 @@ class GUIManager:
         
         # 其他配置
         self.polling_interval_var = tk.DoubleVar(value=self.config.polling_interval)
-        self.debug_var = tk.BooleanVar(value=self.config.debug)
         self.auto_save_var = tk.BooleanVar(value=self.config.auto_save)
         
         # 状态
@@ -336,13 +335,6 @@ class GUIManager:
             width=5
         ).pack(side=tk.LEFT, padx=5)
         
-        # 调试模式
-        ttk.Checkbutton(
-            frame,
-            text="调试模式",
-            variable=self.debug_var
-        ).pack(side=tk.LEFT, padx=5)
-        
         # 自动保存
         ttk.Checkbutton(
             frame,
@@ -384,9 +376,29 @@ class GUIManager:
         log_frame = ttk.LabelFrame(parent, text="日志", padding="5")
         log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, height=15)
+        # 添加日志控制按钮区域
+        log_control_frame = ttk.Frame(log_frame)
+        log_control_frame.pack(fill=tk.X, pady=2)
+        
+        # 添加清除日志按钮
+        self.clear_log_button = ttk.Button(
+            log_control_frame,
+            text="清除日志",
+            command=self._clear_log
+        )
+        self.clear_log_button.pack(side=tk.RIGHT, padx=5)
+        
+        # 日志文本区域
+        self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, height=25)  # 增加日志窗口高度
         self.log_text.pack(fill=tk.BOTH, expand=True)
         self.log_text.config(state=tk.DISABLED)
+    
+    def _clear_log(self):
+        """清除日志内容"""
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.config(state=tk.DISABLED)
+        self.logger.info("日志已清除")
     
     def _start_log_processing(self):
         """启动日志处理"""
@@ -520,7 +532,6 @@ class GUIManager:
         
         # 更新其他配置
         self.config.polling_interval = self.polling_interval_var.get()
-        self.config.debug = self.debug_var.get()
         self.config.auto_save = self.auto_save_var.get()
         
         # 保存配置
