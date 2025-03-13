@@ -44,6 +44,10 @@ class GUIManager:
         self.logger = logging.getLogger()
         self.logger.addHandler(self.queue_handler)
         
+        # 日志窗口配置
+        self.max_log_lines = 1000  # 最大日志行数
+        self.current_log_lines = 0  # 当前日志行数
+        
         # 创建UI组件
         self._create_ui()
         
@@ -380,6 +384,10 @@ class GUIManager:
         log_control_frame = ttk.Frame(log_frame)
         log_control_frame.pack(fill=tk.X, pady=2)
         
+        # 添加日志行数显示标签
+        self.log_lines_label = ttk.Label(log_control_frame, text="日志行数: 0")
+        self.log_lines_label.pack(side=tk.LEFT, padx=5)
+        
         # 添加清除日志按钮
         self.clear_log_button = ttk.Button(
             log_control_frame,
@@ -397,6 +405,8 @@ class GUIManager:
         """清除日志内容"""
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete(1.0, tk.END)
+        self.current_log_lines = 0  # 重置行数计数
+        self.log_lines_label.config(text="日志行数: 0")  # 更新显示
         self.log_text.config(state=tk.DISABLED)
         self.logger.info("日志已清除")
     
@@ -421,9 +431,24 @@ class GUIManager:
         """显示日志记录"""
         msg = self.queue_handler.format(record)
         self.log_text.config(state=tk.NORMAL)
+        
+        # 检查是否超过最大行数限制
+        if self.current_log_lines >= self.max_log_lines:
+            # 删除最早的10%的日志
+            lines_to_delete = self.max_log_lines // 10
+            # 获取要删除的行的结束位置
+            end_pos = self.log_text.index(f"{lines_to_delete + 1}.0")
+            # 删除这些行
+            self.log_text.delete("1.0", end_pos)
+            self.current_log_lines -= lines_to_delete
+        
+        # 添加新日志
         self.log_text.insert(tk.END, msg + '\n')
+        self.current_log_lines += 1
         self.log_text.see(tk.END)
-        self.log_text.config(state=tk.DISABLED)
+        
+        # 更新日志行数显示
+        self.log_lines_label.config(text=f"日志行数: {self.current_log_lines}")
         
         # 设置日志颜色
         tag = "normal"
@@ -438,6 +463,8 @@ class GUIManager:
         self.log_text.tag_config("error", foreground="red")
         self.log_text.tag_config("warning", foreground="orange")
         self.log_text.tag_config("info", foreground="blue")
+        
+        self.log_text.config(state=tk.DISABLED)
     
     def _refresh_jlink_devices(self):
         """刷新JLink设备列表"""

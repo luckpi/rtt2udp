@@ -90,11 +90,11 @@ class UDPManager:
             
             return data
         except socket.error as e:
-            if e.errno != socket.errno.EAGAIN and e.errno != socket.errno.EWOULDBLOCK:
-                self.logger.warning(f"接收数据失败: {str(e)}")
+            # if e.errno != socket.errno.EAGAIN and e.errno != socket.errno.EWOULDBLOCK:
+            #     self.logger.warning(f"接收数据失败: {str(e)}")
             return None
         except Exception as e:
-            self.logger.warning(f"接收数据失败: {str(e)}")
+            # self.logger.warning(f"接收数据失败: {str(e)}")
             return None
     
     def close(self):
